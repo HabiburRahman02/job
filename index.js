@@ -25,7 +25,7 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         const jobsCollection = client.db('job-portalDB').collection('jobs');
-        const jobsApplicationCollection = client.db('job-portalDB').collection('job-application');
+        const jobsApplicationCollection = client.db('job-portalDB').collection('job-applications');
 
         // jobs related apis
         app.get('/job/:id', async (req, res) => {
@@ -41,10 +41,28 @@ async function run() {
         })
 
         // jobs application related apis
-        app.post('/job-application', async (req, res) => {
+        app.get('/job-application', async (req, res) => {
+            const query = { applicant_email: req.query.email };
+            const result = await jobsApplicationCollection.find(query).toArray();
+         
+            for(const application of result){
+                const newQuery = {_id: new ObjectId(application.job_id)}
+                const job = await jobsCollection.findOne(newQuery);
+                console.log('job', job); 
+                console.log('application', application); 
+                if(job){
+                    application.title = job.title
+                    application.company = job.company
+                    application.company_logo = job.company_logo
+                }
+            }
+            
+            res.send(result);
+        })
+
+        app.post('/job-applications', async (req, res) => {
             const application = req.body;
             const result = await jobsApplicationCollection.insertOne(application);
-            console.log(result);
             res.send(result);
         })
 
