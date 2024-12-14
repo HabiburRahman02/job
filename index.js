@@ -40,23 +40,30 @@ async function run() {
             res.send(result);
         })
 
+        app.post('/post-jobs', async (req, res) => {
+            const newJob = req.body;
+            const result = await jobsCollection.insertOne(newJob);
+            res.send(result)
+        })
+
+
         // jobs application related apis
         app.get('/job-application', async (req, res) => {
             const query = { applicant_email: req.query.email };
             const result = await jobsApplicationCollection.find(query).toArray();
-         
-            for(const application of result){
-                const newQuery = {_id: new ObjectId(application.job_id)}
+
+            for (const application of result) {
+                const newQuery = { _id: new ObjectId(application.job_id) }
                 const job = await jobsCollection.findOne(newQuery);
-                console.log('job', job); 
-                console.log('application', application); 
-                if(job){
+                console.log('job', job);
+                console.log('application', application);
+                if (job) {
                     application.title = job.title
                     application.company = job.company
                     application.company_logo = job.company_logo
                 }
             }
-            
+
             res.send(result);
         })
 
