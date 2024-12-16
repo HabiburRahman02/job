@@ -1,15 +1,42 @@
 const express = require('express')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express()
+const cookieParser = require('cookie-parser')
+const jwt = require('jsonwebtoken')
 const cors = require('cors');
 require('dotenv').config()
 const port = process.env.PORT || 5000
 
 
 // middleware
-app.use(cors());
+app.use(cors({
+    origin: [
+        'http://localhost:5173'
+    ],
+    credentials: true
+}));
 app.use(express.json());
+app.use(cookieParser())
 
+const logger = (req, res, next) => {
+    console.log('this is custom middleware(logger)');
+    next();
+}
+
+const verifyToken = (req, res, next) => {
+    const token = req?.cookies?.token
+    if (!token) {
+        return res.status(401).send({ message: 'Unauthorized access' })
+    }
+
+    jwt.verify(token, process.env.JWT_ACCESS_TOKEN, (err, decoded) => {
+        if (err) {
+            return res.status(401).send({ message: 'Unauthorized access' })
+        }
+        req.user = decoded
+        next();
+    })
+}
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster3.ggy8e.mongodb.net/?retryWrites=true&w=majority&appName=Cluster3`
 
@@ -27,6 +54,17 @@ async function run() {
         const jobsCollection = client.db('job-portalDB').collection('jobs');
         const jobsApplicationCollection = client.db('job-portalDB').collection('job-applications');
 
+        // auth related apis
+        app.post('/jwt', async (req, res) => {
+            const user = req.body;
+            const token = jwt.sign(user, process.env.JWT_ACCESS_TOKEN, { expiresIn: '2h' })
+            res
+                .cookie('token', token, {
+                    httpOnly: true,
+                    secure: false // only for localhost when deploy now set true
+                })
+                .send({ success: true });
+        })
         // jobs related apis
         app.get('/job/:id', async (req, res) => {
             const id = req.params.id;
@@ -53,17 +91,22 @@ async function run() {
 
 
         // jobs application related apis
-        app.get('/applications/jobs/:job_id', async(req,res)=>{
+        app.get('/applications/jobs/:job_id', async (req, res) => {
             const jobId = req.params.job_id;
-            const query = {job_id: jobId}
+            const query = { job_id: jobId }
             const result = await jobsApplicationCollection.find(query).toArray();
             res.send(result)
         })
 
-        app.get('/job-application', async (req, res) => {
+        app.get('/job-application', logger, verifyToken, async (req, res) => {
             const query = { applicant_email: req.query.email };
-            const result = await jobsApplicationCollection.find(query).toArray();
 
+            if(req.user.email != req.query.email){
+                return res.status(403).send({ message: 'Forbidden access' })
+            }
+
+            const result = await jobsApplicationCollection.find(query).toArray();
+            console.log('job application ');
             for (const application of result) {
                 const newQuery = { _id: new ObjectId(application.job_id) }
                 const job = await jobsCollection.findOne(newQuery);
@@ -88,16 +131,29 @@ async function run() {
             if (job.applicationCount) {
                 newCount = job.applicationCount + 1
             }
-            else{
+            else {
                 newCount = 1;
             }
-            const filter = {_id: new ObjectId(id)}
+            const filter = { _id: new ObjectId(id) }
             const updatedDoc = {
                 $set: {
                     applicationCount: newCount
                 }
             }
-            const jobResult = await jobsCollection.updateOne(filter,updatedDoc)
+            const jobResult = await jobsCollection.updateOne(filter, updatedDoc)
+            res.send(result);
+        })
+
+        app.patch('/view-application/:id', async (req, res) => {
+            const data = req.body;
+            const id = req.params.id;
+            const filter = { _id: new ObjectId(id) }
+            const updated = {
+                $set: {
+                    status: data.status
+                }
+            }
+            const result = await jobsApplicationCollection.updateOne(filter, updated);
             res.send(result);
         })
 
